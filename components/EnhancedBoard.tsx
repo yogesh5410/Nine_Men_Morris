@@ -14,6 +14,7 @@ interface EnhancedBoardProps {
   onPositionClick: (position: Position) => void;
   phase: string;
   currentPlayer: Player | null;
+  hintPositions?: Position[];
   theme: Theme;
   pieceStyle: PieceStyle;
   animationsEnabled: boolean;
@@ -27,6 +28,7 @@ export default function EnhancedBoard({
   onPositionClick,
   phase,
   currentPlayer = null,
+  hintPositions = [],
   theme,
   pieceStyle,
   animationsEnabled,
@@ -110,6 +112,7 @@ export default function EnhancedBoard({
             opponent !== null &&
             piece === opponent &&
             canRemovePiece(board as any, position as Position, opponent);
+          const isHinted = hintPositions && hintPositions.includes(position as Position);
           const isLastMoved = lastMovedPosition === position;
 
           return (
@@ -193,6 +196,32 @@ export default function EnhancedBoard({
                   </>
                 );
               })()}
+
+              {/* Hint Indicator - bright pulsing ring */}
+              {isHinted && (
+                <>
+                  <motion.circle
+                    cx={x}
+                    cy={y}
+                    r={24}
+                    fill="none"
+                    stroke={theme.buttonPrimary}
+                    strokeWidth="3"
+                    opacity={0.9}
+                    animate={animationsEnabled ? { r: [20, 26, 20], opacity: [0.9, 0.4, 0.9] } : {}}
+                    transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                  <motion.circle
+                    cx={x}
+                    cy={y}
+                    r={10}
+                    fill={theme.buttonPrimary}
+                    opacity={0.85}
+                    animate={animationsEnabled ? { scale: [1, 1.25, 1], opacity: [0.85, 0.5, 0.85] } : {}}
+                    transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                </>
+              )}
 
               {/* Removable Piece Indicator - Black highlighting */}
               {isRemovable && (
