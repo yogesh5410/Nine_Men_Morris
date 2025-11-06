@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Position, Player, positionCoordinates, boardLines } from '@/lib/boardConfig';
+import { canRemovePiece, getOpponent } from '@/lib/gameLogic';
 import { Theme, PieceStyle } from '@/contexts/ThemeContext';
 import Piece from './Piece';
 
@@ -12,6 +13,7 @@ interface EnhancedBoardProps {
   lastMovedPosition?: Position | null;
   onPositionClick: (position: Position) => void;
   phase: string;
+  currentPlayer: Player | null;
   theme: Theme;
   pieceStyle: PieceStyle;
   animationsEnabled: boolean;
@@ -24,6 +26,7 @@ export default function EnhancedBoard({
   lastMovedPosition = null,
   onPositionClick,
   phase,
+  currentPlayer = null,
   theme,
   pieceStyle,
   animationsEnabled,
@@ -98,7 +101,15 @@ export default function EnhancedBoard({
           const piece = board[position];
           const isSelected = selectedPosition === position;
           const isLegalMove = legalMoves.includes(position);
-          const isRemovable = phase === 'removing' && piece && piece !== (board[selectedPosition!] || null);
+          // Only opponent pieces should be highlighted for removal.
+          // Use game logic to determine if the piece is removable (not part of a mill unless all are in mills).
+          const opponent = currentPlayer ? getOpponent(currentPlayer) : null;
+          const isRemovable =
+            phase === 'removing' &&
+            piece !== null &&
+            opponent !== null &&
+            piece === opponent &&
+            canRemovePiece(board as any, position as Position, opponent);
           const isLastMoved = lastMovedPosition === position;
 
           return (

@@ -431,6 +431,7 @@ function GameContent() {
               lastMovedPosition={lastMovedPosition}
               onPositionClick={handlePositionClick}
               phase={gameState.phase}
+              currentPlayer={gameState.currentPlayer}
               theme={settings.theme}
               pieceStyle={settings.pieceStyle}
               animationsEnabled={settings.animationsEnabled}
