@@ -21,6 +21,9 @@ import { Position } from '@/lib/boardConfig';
 import EnhancedBoard from '@/components/EnhancedBoard';
 import GameTimer from '@/components/GameTimer';
 import TurnTimer from '@/components/TurnTimer';
+import GameOverModal from '@/components/GameOverModal';
+import HintDisplay from '@/components/HintDisplay';
+import { generateHint } from '@/lib/hintSystem';
 
 function GameContent() {
   const router = useRouter();
@@ -28,16 +31,21 @@ function GameContent() {
   const mode = searchParams.get('mode') || 'pvp';
   
   const { settings } = useTheme();
-  const { session, endSession } = useStats();
+  // include startSession and useHint so we can reset hint count on game restart
+  const { session, endSession, startSession, useHint } = useStats();
   const { isAIThinking, getAIMove } = useAI();
   
-  const [gameStartTime] = useState(Date.now());
+  const [gameStartTime, setGameStartTime] = useState(Date.now());
+  const [gameEndTime, setGameEndTime] = useState<number | null>(null);
   const [moveCount, setMoveCount] = useState(0);
   const [piecesLostByPlayer, setPiecesLostByPlayer] = useState({ white: 0, black: 0 });
   const [turnTimeoutEnabled] = useState(true); // Enable turn timer
   const [timerResetKey, setTimerResetKey] = useState(0); // For resetting timer
   const [lastMovedPosition, setLastMovedPosition] = useState<Position | null>(null); // Track last moved piece
   const [aiMoveEnabled, setAiMoveEnabled] = useState(true); // Control AI moves
+  const [hintText, setHintText] = useState<string | null>(null);
+  const [hintPositions, setHintPositions] = useState<Position[]>([]);
+  const [showHintModal, setShowHintModal] = useState(false);
 
   const {
     state: gameState,
@@ -263,6 +271,9 @@ function GameContent() {
         });
       }
 
+      // record end time for accurate total time display
+      setGameEndTime(Date.now());
+      
       // Update stats
       endSession(
         isPlayerWin ? 'win' : 'loss',
@@ -271,6 +282,28 @@ function GameContent() {
       );
     }
   }, [gameState.phase, gameState.message, session, aiPlayer, moveCount, piecesLostByPlayer, endSession, settings.theme.buttonPrimary]);
+
+  // Handlers for GameOverModal
+  const handlePlayAgain = () => {
+    // restart game state
+    reset(initializeGame());
+    setMoveCount(0);
+    setTimerResetKey(prev => prev + 1);
+    // reset timers
+    setGameStartTime(Date.now());
+    setGameEndTime(null);
+    // restart session hints so player has fresh hints on replay
+    try {
+      startSession(mode as any);
+    } catch (e) {
+      // safe fallback: ignore if startSession not available
+      console.warn('startSession not available', e);
+    }
+  };
+
+  const handleBackToMenu = () => {
+    router.push('/mode-select');
+  };
 
   // Handle turn timeout (make random legal move)
   const handleTurnTimeout = useCallback(async () => {
@@ -363,6 +396,55 @@ function GameContent() {
         )
       : [];
 
+  const totalTimeSeconds = gameEndTime ? Math.max(0, Math.floor((gameEndTime - gameStartTime) / 1000)) : Math.max(0, Math.floor((Date.now() - gameStartTime) / 1000));
+  const modalIsPerfect = (() => {
+    if (!aiPlayer) return false;
+    const humanPlayer = aiPlayer === 'black' ? 'white' : 'black';
+    return piecesLostByPlayer[humanPlayer] === 0;
+  })();
+
+  const gameOverContent = (
+    <GameOverModal
+      winner={gameState.winner}
+      aiMode={!!aiPlayer}
+      humanPlayer={aiPlayer ? (aiPlayer === 'black' ? 'white' : 'black') : null}
+      isPlayerWin={aiPlayer ? gameState.winner !== aiPlayer : true}
+      moves={moveCount}
+      isPerfect={modalIsPerfect}
+      totalTimeSeconds={totalTimeSeconds}
+      onPlayAgain={handlePlayAgain}
+      onBack={handleBackToMenu}
+      theme={settings.theme}
+    />
+  );
+
+  // Hint flow
+  const handleGetHint = async () => {
+    // Try to consume a hint from session
+    const ok = useHint();
+    if (!ok) {
+      toast.error('No hints remaining');
+      return;
+    }
+
+    const hint = await generateHint(gameState, aiDifficulty as any);
+    if (!hint) {
+      toast('No hint available right now');
+      return;
+    }
+
+    // Build hint text
+    const text = hint.reason;
+    setHintText(text);
+    // highlight suggested positions (prefer to highlight 'to', include from if present)
+    const positions: Position[] = hint.from !== undefined ? [hint.from, hint.to] : [hint.to];
+    setHintPositions(positions);
+    setShowHintModal(true);
+
+    // Clear highlight after a few seconds
+    setTimeout(() => setHintPositions([]), 5000);
+  };
+
   return (
     <div
       className="min-h-screen p-4 py-8"
@@ -432,11 +514,23 @@ function GameContent() {
               onPositionClick={handlePositionClick}
               phase={gameState.phase}
               currentPlayer={gameState.currentPlayer}
+              hintPositions={hintPositions}
               theme={settings.theme}
               pieceStyle={settings.pieceStyle}
               animationsEnabled={settings.animationsEnabled}
             />
           </div>
+
+          {/* Game Over Modal */}
+          {gameState.phase === 'gameOver' && gameOverContent}
+
+          {/* Hint Modal */}
+          {showHintModal && (
+            <HintDisplay
+              hint={hintText}
+              onClose={() => { setShowHintModal(false); setHintText(null); }}
+            />
+          )}
 
           {/* Side Panel */}
           <div className="space-y-4">
@@ -515,6 +609,19 @@ function GameContent() {
                 )}
               </div>
 
+              {/* Get Hint Button */}
+              {session && session.hintsRemaining > 0 && gameState.phase !== 'gameOver' && (
+                <div className="mt-4 flex justify-center lg:justify-start">
+                  <button
+                    onClick={handleGetHint}
+                    className="px-4 py-2 rounded-lg font-semibold"
+                    style={{ backgroundColor: settings.theme.buttonPrimary, color: '#fff' }}
+                  >
+                    💡 Get Hint
+                  </button>
+                </div>
+              )}
+
               <div
                 className="mt-4 p-3 rounded-lg text-center"
                 style={{
@@ -555,6 +662,15 @@ function GameContent() {
                     reset(initializeGame());
                     setMoveCount(0);
                     setTimerResetKey(prev => prev + 1); // Reset timer
+                    // Reset game timing so total time does not accumulate from previous games
+                    setGameStartTime(Date.now());
+                    setGameEndTime(null);
+                    // restart session so hints are available again
+                    try {
+                      startSession(mode as any);
+                    } catch (e) {
+                      console.warn('startSession not available', e);
+                    }
                     toast('Game reset!', { icon: '🔄' });
                   }
                 }}
