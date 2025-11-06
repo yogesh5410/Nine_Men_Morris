@@ -21,6 +21,7 @@ import { Position } from '@/lib/boardConfig';
 import EnhancedBoard from '@/components/EnhancedBoard';
 import GameTimer from '@/components/GameTimer';
 import TurnTimer from '@/components/TurnTimer';
+import GameOverModal from '@/components/GameOverModal';
 
 function GameContent() {
   const router = useRouter();
@@ -31,7 +32,8 @@ function GameContent() {
   const { session, endSession } = useStats();
   const { isAIThinking, getAIMove } = useAI();
   
-  const [gameStartTime] = useState(Date.now());
+  const [gameStartTime, setGameStartTime] = useState(Date.now());
+  const [gameEndTime, setGameEndTime] = useState<number | null>(null);
   const [moveCount, setMoveCount] = useState(0);
   const [piecesLostByPlayer, setPiecesLostByPlayer] = useState({ white: 0, black: 0 });
   const [turnTimeoutEnabled] = useState(true); // Enable turn timer
@@ -263,6 +265,9 @@ function GameContent() {
         });
       }
 
+      // record end time for accurate total time display
+      setGameEndTime(Date.now());
+      
       // Update stats
       endSession(
         isPlayerWin ? 'win' : 'loss',
@@ -271,6 +276,20 @@ function GameContent() {
       );
     }
   }, [gameState.phase, gameState.message, session, aiPlayer, moveCount, piecesLostByPlayer, endSession, settings.theme.buttonPrimary]);
+
+  // Handlers for GameOverModal
+  const handlePlayAgain = () => {
+    reset(initializeGame());
+    setMoveCount(0);
+    setTimerResetKey(prev => prev + 1);
+    // reset timers
+    setGameStartTime(Date.now());
+    setGameEndTime(null);
+  };
+
+  const handleBackToMenu = () => {
+    router.push('/mode-select');
+  };
 
   // Handle turn timeout (make random legal move)
   const handleTurnTimeout = useCallback(async () => {
@@ -363,6 +382,13 @@ function GameContent() {
         )
       : [];
 
+  const totalTimeSeconds = gameEndTime ? Math.max(0, Math.floor((gameEndTime - gameStartTime) / 1000)) : Math.max(0, Math.floor((Date.now() - gameStartTime) / 1000));
+  const modalIsPerfect = (() => {
+    if (!aiPlayer) return false;
+    const humanPlayer = aiPlayer === 'black' ? 'white' : 'black';
+    return piecesLostByPlayer[humanPlayer] === 0;
+  })();
+
   return (
     <div
       className="min-h-screen p-4 py-8"
@@ -437,6 +463,22 @@ function GameContent() {
               animationsEnabled={settings.animationsEnabled}
             />
           </div>
+
+          {/* Game Over Modal */}
+          {gameState.phase === 'gameOver' && (
+            <GameOverModal
+              winner={gameState.winner}
+              aiMode={!!aiPlayer}
+              humanPlayer={aiPlayer ? (aiPlayer === 'black' ? 'white' : 'black') : null}
+              isPlayerWin={aiPlayer ? gameState.winner !== aiPlayer : true}
+              moves={moveCount}
+              isPerfect={modalIsPerfect}
+              totalTimeSeconds={totalTimeSeconds}
+              onPlayAgain={handlePlayAgain}
+              onBack={handleBackToMenu}
+              theme={settings.theme}
+            />
+          )}
 
           {/* Side Panel */}
           <div className="space-y-4">
