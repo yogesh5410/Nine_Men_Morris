@@ -37,13 +37,12 @@ export default function EnhancedBoard({
   const padding = 50;
   const innerSize = size - 2 * padding;
 
-  // Debug logging
-  console.log('Board rendering:', {
-    boardLinesCount: boardLines.length,
-    positionsCount: Object.keys(positionCoordinates).length,
-    theme: theme.boardLines,
-    board: Object.keys(board).length
-  });
+  // FIX: Prevent event bubbling (double clicks)
+  const handleSafeClick = (e: React.MouseEvent, position: Position) => {
+    e.stopPropagation(); // Stop the event from bubbling to parent containers
+    e.preventDefault();  // Prevent default browser behaviors
+    onPositionClick(position);
+  };
 
   return (
     <motion.div
@@ -72,7 +71,6 @@ export default function EnhancedBoard({
           const toCoords = positionCoordinates[to as Position];
           
           if (!fromCoords || !toCoords) {
-            console.error('Missing coordinates for line:', from, to);
             return null;
           }
           
@@ -103,8 +101,7 @@ export default function EnhancedBoard({
           const piece = board[position];
           const isSelected = selectedPosition === position;
           const isLegalMove = legalMoves.includes(position);
-          // Only opponent pieces should be highlighted for removal.
-          // Use game logic to determine if the piece is removable (not part of a mill unless all are in mills).
+          
           const opponent = currentPlayer ? getOpponent(currentPlayer) : null;
           const isRemovable =
             phase === 'removing' &&
@@ -116,8 +113,15 @@ export default function EnhancedBoard({
           const isLastMoved = lastMovedPosition === position;
 
           return (
-            <g key={position}>
-              {/* Last Moved Piece Highlight */}
+            <g 
+              key={position} 
+              onClick={(e) => handleSafeClick(e, position)}
+              style={{ cursor: 'pointer' }}
+            >
+              {/* 1. Invisible Click Target (Larger hit area) */}
+              <circle cx={x} cy={y} r={35} fill="transparent" />
+
+              {/* 2. Last Moved Piece Highlight */}
               {isLastMoved && piece && (
                 <motion.circle
                   cx={x}
@@ -139,25 +143,18 @@ export default function EnhancedBoard({
                 />
               )}
 
-              {/* Legal Move Indicators - Each with unique color and animation */}
+              {/* 3. Legal Move Indicators */}
               {isLegalMove && !piece && (() => {
                 const moveIndex = legalMoves.indexOf(position);
                 const colors = [
-                  '#10b981', // green
-                  '#3b82f6', // blue
-                  '#8b5cf6', // purple
-                  '#f59e0b', // amber
-                  '#ec4899', // pink
-                  '#06b6d4', // cyan
-                  '#f97316', // orange
-                  '#84cc16', // lime
+                  '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b',
+                  '#ec4899', '#06b6d4', '#f97316', '#84cc16',
                 ];
                 const color = colors[moveIndex % colors.length];
                 const duration = 0.8 + (moveIndex * 0.15);
                 
                 return (
                   <>
-                    {/* Outer pulsing ring */}
                     <motion.circle
                       cx={x}
                       cy={y}
@@ -170,13 +167,8 @@ export default function EnhancedBoard({
                         r: [16, 22, 16],
                         opacity: [0.6, 0.2, 0.6],
                       } : {}}
-                      transition={{
-                        duration: duration,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                      }}
+                      transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
                     />
-                    {/* Inner glowing dot */}
                     <motion.circle
                       cx={x}
                       cy={y}
@@ -187,17 +179,13 @@ export default function EnhancedBoard({
                         scale: [1, 1.3, 1],
                         opacity: [0.6, 0.9, 0.6],
                       } : {}}
-                      transition={{
-                        duration: duration,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                      }}
+                      transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
                     />
                   </>
                 );
               })()}
 
-              {/* Hint Indicator - bright pulsing ring */}
+              {/* 4. Hint Indicator */}
               {isHinted && (
                 <>
                   <motion.circle
@@ -223,7 +211,7 @@ export default function EnhancedBoard({
                 </>
               )}
 
-              {/* Removable Piece Indicator - Black highlighting */}
+              {/* 5. Removable Piece Indicator */}
               {isRemovable && (
                 <>
                   <motion.circle
@@ -238,11 +226,7 @@ export default function EnhancedBoard({
                       r: [35, 42, 35],
                       opacity: [0.8, 0.5, 0.8],
                     }}
-                    transition={{
-                      duration: 0.7,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
+                    transition={{ duration: 0.7, repeat: Infinity, ease: "easeInOut" }}
                   />
                   <motion.circle
                     cx={x}
@@ -256,16 +240,12 @@ export default function EnhancedBoard({
                       r: [25, 30, 25],
                       opacity: [0.9, 0.6, 0.9],
                     }}
-                    transition={{
-                      duration: 0.8,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: "easeInOut" }}
                   />
                 </>
               )}
 
-              {/* Selected Position Highlight */}
+              {/* 6. Selected Position Highlight */}
               {isSelected && (
                 <motion.circle
                   cx={x}
@@ -277,15 +257,11 @@ export default function EnhancedBoard({
                   animate={animationsEnabled ? {
                     r: [18, 22, 18],
                   } : {}}
-                  transition={{
-                    duration: 1,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
                 />
               )}
 
-              {/* Position Point */}
+              {/* 7. Position Point */}
               <circle
                 cx={x}
                 cy={y}
@@ -295,7 +271,7 @@ export default function EnhancedBoard({
                 strokeWidth="3"
               />
 
-              {/* Piece */}
+              {/* 8. The Piece */}
               {piece && (
                 <motion.g
                   initial={animationsEnabled ? { scale: 0, opacity: 0 } : {}}
@@ -334,26 +310,7 @@ export default function EnhancedBoard({
                 </motion.g>
               )}
 
-              {/* Clickable Area */}
-              <circle
-                cx={x}
-                cy={y}
-                r={25}
-                fill="transparent"
-                cursor="pointer"
-                onClick={() => onPositionClick(position)}
-                onMouseEnter={(e) => {
-                  (e.target as SVGCircleElement).style.fill = 'rgba(255, 255, 255, 0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  (e.target as SVGCircleElement).style.fill = 'transparent';
-                }}
-              />
-            </g>
-          );
-        })}
-
-        {/* Position Labels (for debugging - can be removed) */}
+              {/* Position Labels (for debugging - can be removed) */}
         {process.env.NODE_ENV === 'development' && (
           <>
             {Object.entries(positionCoordinates).map(([pos, coords]) => {
@@ -366,9 +323,9 @@ export default function EnhancedBoard({
                   x={x}
                   y={y - 30}
                   textAnchor="middle"
-                  fill={theme.textSecondary}
-                  fontSize="12"
-                  opacity="0.5"
+                  fill="#FFFFFF"
+                  fontSize="14"
+                  opacity="0.1"
                 >
                   {position}
                 </text>
@@ -376,6 +333,9 @@ export default function EnhancedBoard({
             })}
           </>
         )}
+            </g>
+          );
+        })}
       </svg>
     </motion.div>
   );
