@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast, { Toaster } from 'react-hot-toast';
@@ -31,18 +31,22 @@ function GameContent() {
   const mode = searchParams.get('mode') || 'pvp';
   
   const { settings } = useTheme();
-  // include startSession and useHint so we can reset hint count on game restart
-  const { session, endSession, startSession, useHint } = useStats();
+  const { session, endSession, startSession } = useStats();
   const { isAIThinking, getAIMove } = useAI();
   
+  const processingRef = useRef(false);
   const [gameStartTime, setGameStartTime] = useState(Date.now());
   const [gameEndTime, setGameEndTime] = useState<number | null>(null);
-  const [moveCount, setMoveCount] = useState(0);
+  
+  // Counters
+  const [moveCounts, setMoveCounts] = useState({ white: 0, black: 0 });
+  const [playerHints, setPlayerHints] = useState({ white: 3, black: 3 });
   const [piecesLostByPlayer, setPiecesLostByPlayer] = useState({ white: 0, black: 0 });
-  const [turnTimeoutEnabled] = useState(true); // Enable turn timer
-  const [timerResetKey, setTimerResetKey] = useState(0); // For resetting timer
-  const [lastMovedPosition, setLastMovedPosition] = useState<Position | null>(null); // Track last moved piece
-  const [aiMoveEnabled, setAiMoveEnabled] = useState(true); // Control AI moves
+  
+  const [turnTimeoutEnabled] = useState(true);
+  const [timerResetKey, setTimerResetKey] = useState(0);
+  const [lastMovedPosition, setLastMovedPosition] = useState<Position | null>(null);
+  const [aiMoveEnabled, setAiMoveEnabled] = useState(true);
   const [hintText, setHintText] = useState<string | null>(null);
   const [hintPositions, setHintPositions] = useState<Position[]>([]);
   const [showHintModal, setShowHintModal] = useState(false);
@@ -57,133 +61,100 @@ function GameContent() {
     canRedo,
   } = useGameHistory(initializeGame());
 
-  // AI player configuration
   const aiPlayer = mode.startsWith('ai-') ? 'black' : null;
   const aiDifficulty = mode === 'ai-easy' ? 'easy' : mode === 'ai-medium' ? 'medium' : mode === 'ai-hard' ? 'hard' : 'medium';
 
-  // Track pieces lost for perfect game detection
   useEffect(() => {
     const whitePiecesPlaced = 9 - gameState.piecesRemaining.white;
     const blackPiecesPlaced = 9 - gameState.piecesRemaining.black;
-    
     setPiecesLostByPlayer({
       white: whitePiecesPlaced - gameState.piecesOnBoard.white,
       black: blackPiecesPlaced - gameState.piecesOnBoard.black,
     });
   }, [gameState.piecesRemaining, gameState.piecesOnBoard]);
 
-  // Execute AI move
+  // AI Move Logic
   const executeAIMove = useCallback(async () => {
+    if (processingRef.current) return;
     if (!aiPlayer || gameState.phase === 'gameOver' || isAIThinking) return;
     if (gameState.currentPlayer !== aiPlayer) return;
 
-    const aiMove = await getAIMove(gameState, aiPlayer, aiDifficulty);
-    
-    // If AI has no valid moves (blocked), trigger game over
-    if (!aiMove) {
-      // The opponent of AI (the human player) wins
-      const winner = aiPlayer === 'black' ? 'white' : 'black';
-      const newState: GameState = {
-        ...gameState,
-        phase: 'gameOver',
-        winner,
-        message: `${winner === 'white' ? 'White' : 'Black'} wins! AI has no valid moves.`,
-      };
-      pushState(newState);
-      toast.success(`🎉 You win! AI has no valid moves.`, {
-        icon: '👑',
-        duration: 4000,
-      });
-      return;
-    }
-    
-    if (aiMove) {
-      let newState: GameState;
-      
-      if (aiMove.type === 'place') {
-        newState = placePiece(gameState, aiMove.to);
-        toast.success(`AI placed a piece`, {
-          icon: '🤖',
-          duration: 1500,
-          id: 'ai-move',
-        });
-      } else if (aiMove.type === 'move') {
-        let tempState = selectPiece(gameState, aiMove.from!);
-        newState = selectPiece(tempState, aiMove.to);
-        toast.success(`AI moved piece`, {
-          icon: '🤖',
-          duration: 1500,
-          id: 'ai-move',
-        });
-      } else if (aiMove.type === 'remove') {
-        newState = removePiece(gameState, aiMove.to);
-        toast.error(`AI removed your piece!`, {
-          icon: '💥',
-          duration: 1500,
-          id: 'ai-remove',
-        });
-      } else {
-        return;
-      }
-      
-      setMoveCount(prev => prev + 1);
-      pushState(newState);
+    processingRef.current = true;
 
-      // Check for mill formation
-      if (newState.phase === 'removing' && newState.message.includes('Mill')) {
-        toast('AI formed a mill! 🎯', {
-          icon: '⚡',
-          duration: 3000,
-        });
+    try {
+      const aiMove = await getAIMove(gameState, aiPlayer, aiDifficulty);
+      
+      if (!aiMove) {
+        const winner = aiPlayer === 'black' ? 'white' : 'black';
+        const newState: GameState = {
+          ...gameState,
+          phase: 'gameOver',
+          winner,
+          message: `${winner === 'white' ? 'White' : 'Black'} wins! AI has no valid moves.`,
+        };
+        pushState(newState);
+        toast.success(`🎉 You win! AI has no valid moves.`, { icon: '👑', duration: 4000 });
+      } else {
+        let newState: GameState;
+        
+        if (aiMove.type === 'place') {
+          newState = placePiece(gameState, aiMove.to);
+          toast.success(`AI placed a piece`, { icon: '🤖', duration: 1500 });
+        } else if (aiMove.type === 'move') {
+          let tempState = selectPiece(gameState, aiMove.from!);
+          newState = selectPiece(tempState, aiMove.to);
+          toast.success(`AI moved piece`, { icon: '🤖', duration: 1500 });
+        } else if (aiMove.type === 'remove') {
+          newState = removePiece(gameState, aiMove.to);
+          toast.error(`AI removed your piece!`, { icon: '💥', duration: 1500 });
+        } else {
+          processingRef.current = false;
+          return;
+        }
+        
+        setMoveCounts(prev => ({ ...prev, [aiPlayer]: prev[aiPlayer] + 1 }));
+        pushState(newState);
+
+        if (newState.phase === 'removing' && newState.message.includes('Mill')) {
+          toast('AI formed a mill!', { icon: '⚡' });
+        }
       }
+    } catch (e) {
+      console.error("AI Error", e);
+    } finally {
+      setTimeout(() => { processingRef.current = false; }, 500);
     }
   }, [aiPlayer, gameState, aiDifficulty, isAIThinking, getAIMove, pushState]);
 
-  // Trigger AI move
   useEffect(() => {
     if (aiPlayer && gameState.currentPlayer === aiPlayer && gameState.phase !== 'gameOver' && !isAIThinking && aiMoveEnabled) {
       const timeout = setTimeout(() => {
         executeAIMove();
-        setAiMoveEnabled(true); // Re-enable after move
       }, 800);
       return () => clearTimeout(timeout);
     }
-  }, [aiPlayer, gameState.currentPlayer, gameState.phase, isAIThinking, executeAIMove]);
+  }, [aiPlayer, gameState.currentPlayer, gameState.phase, isAIThinking, executeAIMove, aiMoveEnabled]);
 
-  // Handle position click
+  // Player Move
   const handlePositionClick = useCallback(
     (position: Position) => {
+      if (processingRef.current) return;
       if (isAIThinking || (aiPlayer && gameState.currentPlayer === aiPlayer)) return;
       if (gameState.phase === 'gameOver') return;
 
       const { phase, board, selectedPosition, currentPlayer } = gameState;
       let newState: GameState;
-
       const prevPhase = phase;
 
       switch (phase) {
         case 'placing':
           newState = placePiece(gameState, position);
-          if (newState !== gameState) {
-            toast.success(`Piece placed`, {
-              icon: currentPlayer === 'white' ? '⚪' : '⚫',
-              duration: 1000,
-              id: 'place-piece',
-            });
-          }
+          if (newState !== gameState) toast.success(`Piece placed`, { icon: '📍', duration: 1000 });
           break;
-
         case 'removing':
           newState = removePiece(gameState, position);
-          if (newState !== gameState && newState.phase !== 'removing') {
-            toast.error(`Piece removed!`, {
-              icon: '💥',
-              duration: 1000,
-              id: 'remove-piece',
-            });
-          }
+          if (newState !== gameState) toast.error(`Piece removed!`, { icon: '💥', duration: 1000 });
           break;
-
         case 'moving':
         case 'flying':
           if (selectedPosition === null) {
@@ -193,209 +164,126 @@ function GameContent() {
               newState = { ...gameState, message: 'Select your own piece to move' };
             }
           } else {
-            if (position === selectedPosition) {
-              newState = {
-                ...gameState,
-                selectedPosition: null,
-                message: `${currentPlayer}'s turn - Select a piece to move`,
-              };
-            } else if (board[position] === currentPlayer) {
-              newState = selectPiece(gameState, position);
-            } else {
-              newState = selectPiece(gameState, position);
-              if (newState !== gameState && newState.selectedPosition === null) {
-                toast.success(`Moved to position ${position}`, {
-                  icon: '↔️',
-                  duration: 1500,
-                });
-              }
-            }
+            if (position === selectedPosition) newState = { ...gameState, selectedPosition: null };
+            else if (board[position] === currentPlayer) newState = selectPiece(gameState, position);
+            else newState = selectPiece(gameState, position);
           }
           break;
-
         default:
           newState = gameState;
       }
 
-      // Check for mill formation
       if (newState !== gameState && newState.phase === 'removing' && prevPhase !== 'removing') {
-        toast('Mill formed! Remove an opponent piece! 🎯', {
-          icon: '⭐',
-          duration: 3000,
-          style: {
-            background: settings.theme.buttonPrimary,
-            color: '#fff',
-          },
-        });
+        toast('Mill formed! Remove opponent piece!', { icon: '⭐' });
       }
 
       if (newState !== gameState) {
-        setMoveCount(prev => prev + 1);
-        setLastMovedPosition(position); // Track last moved position
-        setAiMoveEnabled(true); // Re-enable AI moves
+        if (newState.board !== gameState.board && currentPlayer) {
+          setMoveCounts(prev => ({ ...prev, [currentPlayer]: prev[currentPlayer] + 1 }));
+        }
+        setLastMovedPosition(position);
+        setAiMoveEnabled(true);
         pushState(newState);
       }
     },
-    [gameState, pushState, isAIThinking, aiPlayer, settings.theme.buttonPrimary]
+    [gameState, pushState, isAIThinking, aiPlayer]
   );
 
-  // Check for game over
-  useEffect(() => {
-    if (gameState.phase === 'gameOver' && session) {
-      const winner = gameState.message.includes('white') ? 'white' : 'black';
-      const isPlayerWin = aiPlayer ? winner !== aiPlayer : true;
-      let isPerfect = false;
-      if (isPlayerWin && aiPlayer) {
-        const humanPlayer = aiPlayer === 'black' ? 'white' : 'black';
-        isPerfect = piecesLostByPlayer[humanPlayer] === 0;
-      }
-
-      // Show win/loss popup
-      if (isPlayerWin) {
-        toast.success(isPerfect ? '🎉 Perfect Victory! 🎉' : '🏆 You Won! 🏆', {
-          duration: 5000,
-          style: {
-            background: settings.theme.buttonPrimary,
-            color: '#fff',
-            fontSize: '18px',
-            fontWeight: 'bold',
-          },
-        });
-      } else {
-        toast.error('😔 Game Over - You Lost', {
-          duration: 5000,
-          style: {
-            fontSize: '18px',
-            fontWeight: 'bold',
-          },
-        });
-      }
-
-      // record end time for accurate total time display
-      setGameEndTime(Date.now());
-      
-      // Update stats
-      endSession(
-        isPlayerWin ? 'win' : 'loss',
-        moveCount,
-        isPerfect
-      );
-    }
-  }, [gameState.phase, gameState.message, session, aiPlayer, moveCount, piecesLostByPlayer, endSession, settings.theme.buttonPrimary]);
-
-  // Handlers for GameOverModal
-  const handlePlayAgain = () => {
-    // restart game state
-    reset(initializeGame());
-    setMoveCount(0);
-    setTimerResetKey(prev => prev + 1);
-    // reset timers
-    setGameStartTime(Date.now());
-    setGameEndTime(null);
-    // restart session hints so player has fresh hints on replay
-    try {
-      startSession(mode as any);
-    } catch (e) {
-      // safe fallback: ignore if startSession not available
-      console.warn('startSession not available', e);
-    }
-  };
-
-  const handleBackToMenu = () => {
-    router.push('/mode-select');
-  };
-
-  // Handle turn timeout (make random legal move)
+  // Timeout
   const handleTurnTimeout = useCallback(async () => {
+    // If hints modal is open, do not timeout
+    if (showHintModal) return;
+    if (processingRef.current) return;
     if (gameState.phase === 'gameOver') return;
-    if (aiPlayer && gameState.currentPlayer === aiPlayer) return; // Don't timeout AI
-
-    toast.error('⏰ Time\'s up! Making automatic move...', {
-      duration: 2000,
-      icon: '⏱️',
-    });
-
-    // Make a random legal move based on phase
-    let newState: GameState;
     
-    if (gameState.phase === 'placing') {
-      // Find empty positions
-      const emptyPositions: Position[] = [];
-      for (let i = 0; i < 24; i++) {
-        if (gameState.board[i] === null) {
-          emptyPositions.push(i as Position);
+    const currentPlayer = gameState.currentPlayer;
+    if (!currentPlayer) return;
+    if (aiPlayer && currentPlayer === aiPlayer) return;
+
+    processingRef.current = true;
+
+    // STRICT CHECK: Only proceed if > 0 hints
+    if (playerHints[currentPlayer] > 0) {
+      setPlayerHints(prev => ({
+        ...prev,
+        [currentPlayer]: prev[currentPlayer] - 1
+      }));
+
+      toast.error(`Time's up! Used hint for auto-move!`, { icon: '⏱️' });
+
+      let newState: GameState | null = null;
+      
+      // Auto-Move Logic
+      if (gameState.phase === 'placing') {
+        const empties: Position[] = [];
+        for (let i = 0; i < 24; i++) if (gameState.board[i] === null) empties.push(i as Position);
+        if (empties.length > 0) newState = placePiece(gameState, empties[Math.floor(Math.random() * empties.length)]);
+      } else if (gameState.phase === 'moving' || gameState.phase === 'flying') {
+        const myPieces: Position[] = [];
+        for (let i = 0; i < 24; i++) if (gameState.board[i] === gameState.currentPlayer) myPieces.push(i as Position);
+        const shuffled = myPieces.sort(() => 0.5 - Math.random());
+        for (const p of shuffled) {
+          const temp = selectPiece(gameState, p);
+          const moves = getLegalMoves(temp.board, p, temp.piecesOnBoard[currentPlayer] === 3);
+          if (moves.length > 0) {
+            newState = selectPiece(temp, moves[0]);
+            break;
+          }
+        }
+      } else if (gameState.phase === 'removing') {
+        const opp = currentPlayer === 'white' ? 'black' : 'white';
+        const oppPieces: Position[] = [];
+        for (let i = 0; i < 24; i++) if (gameState.board[i] === opp) oppPieces.push(i as Position);
+        for (const p of oppPieces) {
+          const test = removePiece(gameState, p);
+          if (test !== gameState) { newState = test; break; }
         }
       }
-      if (emptyPositions.length > 0) {
-        const randomPos = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
-        newState = placePiece(gameState, randomPos);
-      } else {
-        return;
-      }
-    } else if (gameState.phase === 'moving' || gameState.phase === 'flying') {
-      // Find a piece of current player and move it
-      const playerPieces: Position[] = [];
-      for (let i = 0; i < 24; i++) {
-        if (gameState.board[i] === gameState.currentPlayer) {
-          playerPieces.push(i as Position);
-        }
-      }
-      if (playerPieces.length > 0) {
-        const randomPiece = playerPieces[Math.floor(Math.random() * playerPieces.length)];
-        const tempState = selectPiece(gameState, randomPiece);
-        const moves = getLegalMoves(
-          tempState.board,
-          randomPiece,
-          tempState.piecesOnBoard[tempState.currentPlayer!] === 3
-        );
-        if (moves.length > 0) {
-          const randomMove = moves[Math.floor(Math.random() * moves.length)];
-          newState = selectPiece(tempState, randomMove);
-        } else {
-          return;
-        }
-      } else {
-        return;
-      }
-    } else if (gameState.phase === 'removing') {
-      // Find opponent pieces to remove
-      const opponent = gameState.currentPlayer === 'white' ? 'black' : 'white';
-      const opponentPieces: Position[] = [];
-      for (let i = 0; i < 24; i++) {
-        if (gameState.board[i] === opponent) {
-          opponentPieces.push(i as Position);
-        }
-      }
-      if (opponentPieces.length > 0) {
-        const randomPiece = opponentPieces[Math.floor(Math.random() * opponentPieces.length)];
-        newState = removePiece(gameState, randomPiece);
-      } else {
-        return;
+
+      if (newState) {
+        setMoveCounts(prev => ({ ...prev, [currentPlayer]: prev[currentPlayer] + 1 }));
+        pushState(newState);
       }
     } else {
-      return;
+      // Lose Game immediately if 0 hints
+      const opponent = currentPlayer === 'white' ? 'black' : 'white';
+      const newState: GameState = {
+        ...gameState,
+        phase: 'gameOver',
+        winner: opponent,
+        message: `Time's up! ${currentPlayer} ran out of hints.`,
+      };
+      pushState(newState);
+      toast.error('You Lost! No hints left.', { icon: '💀' });
     }
-    
-    setMoveCount(prev => prev + 1);
-    pushState(newState);
-    
-    toast('⚡ Automatic move made!', {
-      icon: '🤖',
-      duration: 2000,
-    });
-  }, [gameState, aiPlayer, pushState]);
 
-  // Calculate legal moves for highlighting
-  const legalMoves: Position[] =
-    gameState.selectedPosition !== null &&
-    (gameState.phase === 'moving' || gameState.phase === 'flying')
-      ? getLegalMoves(
-          gameState.board,
-          gameState.selectedPosition,
-          gameState.piecesOnBoard[gameState.currentPlayer!] === 3
-        )
+    setTimeout(() => { processingRef.current = false; }, 500);
+  }, [gameState, aiPlayer, playerHints, pushState, showHintModal]);
+
+  const handleGetHint = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentPlayer = gameState.currentPlayer;
+    if (!currentPlayer) return;
+
+    if (playerHints[currentPlayer] > 0) {
+      setPlayerHints(prev => ({ ...prev, [currentPlayer]: prev[currentPlayer] - 1 }));
+      const hint = await generateHint(gameState, aiDifficulty as any);
+      if (hint) {
+        setHintText(hint.reason);
+        setHintPositions(hint.from !== undefined ? [hint.from, hint.to] : [hint.to]);
+        setShowHintModal(true);
+        setTimeout(() => setHintPositions([]), 5000);
+      }
+    } else {
+      toast.error('No hints remaining!');
+    }
+  };
+
+  const legalMoves = gameState.selectedPosition !== null && (gameState.phase === 'moving' || gameState.phase === 'flying')
+      ? getLegalMoves(gameState.board, gameState.selectedPosition, gameState.piecesOnBoard[gameState.currentPlayer!] === 3)
       : [];
 
+  // --- Game Over Calculations ---
   const totalTimeSeconds = gameEndTime ? Math.max(0, Math.floor((gameEndTime - gameStartTime) / 1000)) : Math.max(0, Math.floor((Date.now() - gameStartTime) / 1000));
   const modalIsPerfect = (() => {
     if (!aiPlayer) return false;
@@ -403,47 +291,44 @@ function GameContent() {
     return piecesLostByPlayer[humanPlayer] === 0;
   })();
 
+  // --- Game Over Logic Hook ---
+  useEffect(() => {
+    if (gameState.phase === 'gameOver' && session) {
+      setGameEndTime(Date.now());
+      const isPlayerWin = aiPlayer ? gameState.winner !== aiPlayer : true;
+      
+      if (isPlayerWin) {
+        toast.success(modalIsPerfect ? '🎉 Perfect Victory! 🎉' : '🏆 You Won! 🏆', { duration: 5000 });
+      } else {
+        toast.error('😔 Game Over - You Lost', { duration: 5000 });
+      }
+      
+      endSession(isPlayerWin ? 'win' : 'loss', moveCounts.white + moveCounts.black, modalIsPerfect);
+    }
+  }, [gameState.phase, aiPlayer, gameState.winner]); 
+
   const gameOverContent = (
     <GameOverModal
       winner={gameState.winner}
       aiMode={!!aiPlayer}
       humanPlayer={aiPlayer ? (aiPlayer === 'black' ? 'white' : 'black') : null}
       isPlayerWin={aiPlayer ? gameState.winner !== aiPlayer : true}
-      moves={moveCount}
+      moves={moveCounts.white + moveCounts.black}
       isPerfect={modalIsPerfect}
       totalTimeSeconds={totalTimeSeconds}
-      onPlayAgain={handlePlayAgain}
-      onBack={handleBackToMenu}
+      onPlayAgain={() => {
+        reset(initializeGame());
+        setMoveCounts({ white: 0, black: 0 });
+        setPlayerHints({ white: 3, black: 3 });
+        setTimerResetKey(prev => prev + 1);
+        setGameStartTime(Date.now());
+        setGameEndTime(null);
+        try { startSession(mode as any); } catch (e) {}
+      }}
+      onBack={() => router.push('/mode-select')}
       theme={settings.theme}
     />
   );
-
-  // Hint flow
-  const handleGetHint = async () => {
-    // Try to consume a hint from session
-    const ok = useHint();
-    if (!ok) {
-      toast.error('No hints remaining');
-      return;
-    }
-
-    const hint = await generateHint(gameState, aiDifficulty as any);
-    if (!hint) {
-      toast('No hint available right now');
-      return;
-    }
-
-    // Build hint text
-    const text = hint.reason;
-    setHintText(text);
-    // highlight suggested positions (prefer to highlight 'to', include from if present)
-    const positions: Position[] = hint.from !== undefined ? [hint.from, hint.to] : [hint.to];
-    setHintPositions(positions);
-    setShowHintModal(true);
-
-    // Clear highlight after a few seconds
-    setTimeout(() => setHintPositions([]), 5000);
-  };
 
   return (
     <div
@@ -536,7 +421,7 @@ function GameContent() {
           <div className="space-y-4">
             {/* Game Timer */}
             <GameTimer 
-              isRunning={gameState.phase !== 'gameOver'} 
+              isRunning={gameState.phase !== 'gameOver' && !showHintModal} 
               resetTrigger={timerResetKey}
             />
 
@@ -554,10 +439,11 @@ function GameContent() {
                 <TurnTimer
                   currentPlayer={gameState.currentPlayer}
                   isRunning={
-                    // @ts-ignore - gamePhase can be 'gameOver'
+                    // @ts-ignore
                     gameState.phase !== 'gameOver' && 
                     !isAIThinking &&
-                    !(aiPlayer && gameState.currentPlayer === aiPlayer)
+                    !(aiPlayer && gameState.currentPlayer === aiPlayer) &&
+                    !showHintModal
                   }
                   onTimeout={handleTurnTimeout}
                   maxTime={30}
@@ -577,10 +463,7 @@ function GameContent() {
                 borderColor: settings.theme.cardBorder,
               }}
             >
-              <h3
-                className="text-2xl font-bold mb-4"
-                style={{ color: settings.theme.textPrimary }}
-              >
+              <h3 className="text-2xl font-bold mb-4" style={{ color: settings.theme.textPrimary }}>
                 Game Status
               </h3>
 
@@ -595,26 +478,43 @@ function GameContent() {
                   value={gameState.currentPlayer?.toUpperCase() || 'Game Over'}
                   theme={settings.theme}
                 />
-                <InfoRow
-                  label="Moves Made"
-                  value={moveCount.toString()}
-                  theme={settings.theme}
-                />
-                {session && (
-                  <InfoRow
-                    label="Hints Left"
-                    value={`${session.hintsRemaining}/3`}
-                    theme={settings.theme}
-                  />
-                )}
+                
+                <div className="h-px bg-gray-300 my-2 opacity-50"></div>
+                
+                {/* Player Stats */}
+                <div className="flex justify-between">
+                  <span style={{ color: settings.theme.textSecondary }}>⚪ White Moves:</span>
+                  <span className="font-bold" style={{ color: settings.theme.textPrimary }}>{moveCounts.white}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: settings.theme.textSecondary }}>⚫ Black Moves:</span>
+                  <span className="font-bold" style={{ color: settings.theme.textPrimary }}>{moveCounts.black}</span>
+                </div>
+                
+                <div className="h-px bg-gray-300 my-2 opacity-50"></div>
+
+                {/* Hints */}
+                <div className="flex justify-between">
+                  <span style={{ color: settings.theme.textSecondary }}>⚪ White Hints:</span>
+                  <span className="font-bold" style={{ color: settings.theme.textPrimary }}>{playerHints.white}/3</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: settings.theme.textSecondary }}>⚫ Black Hints:</span>
+                  <span className="font-bold" style={{ color: settings.theme.textPrimary }}>{playerHints.black}/3</span>
+                </div>
               </div>
 
               {/* Get Hint Button */}
-              {session && session.hintsRemaining > 0 && gameState.phase !== 'gameOver' && (
+              {gameState.phase !== 'gameOver' && (
                 <div className="mt-4 flex justify-center lg:justify-start">
                   <button
                     onClick={handleGetHint}
-                    className="px-4 py-2 rounded-lg font-semibold"
+                    disabled={!gameState.currentPlayer || playerHints[gameState.currentPlayer] <= 0}
+                    className={`w-full px-4 py-2 rounded-lg font-semibold transition-all ${
+                      !gameState.currentPlayer || playerHints[gameState.currentPlayer] <= 0 
+                        ? 'opacity-50 cursor-not-allowed' 
+                        : 'hover:scale-105 active:scale-95'
+                    }`}
                     style={{ backgroundColor: settings.theme.buttonPrimary, color: '#fff' }}
                   >
                     💡 Get Hint
@@ -639,7 +539,7 @@ function GameContent() {
                 whileHover={{ scale: canUndo ? 1.05 : 1 }}
                 whileTap={{ scale: canUndo ? 0.95 : 1 }}
                 onClick={() => {
-                  setAiMoveEnabled(false); // Disable AI auto-move temporarily
+                  setAiMoveEnabled(false);
                   undo();
                 }}
                 disabled={!canUndo}
@@ -660,17 +560,12 @@ function GameContent() {
                 onClick={() => {
                   if (confirm('Reset the game?')) {
                     reset(initializeGame());
-                    setMoveCount(0);
-                    setTimerResetKey(prev => prev + 1); // Reset timer
-                    // Reset game timing so total time does not accumulate from previous games
+                    setMoveCounts({ white: 0, black: 0 });
+                    setPlayerHints({ white: 3, black: 3 });
+                    setTimerResetKey(prev => prev + 1);
                     setGameStartTime(Date.now());
                     setGameEndTime(null);
-                    // restart session so hints are available again
-                    try {
-                      startSession(mode as any);
-                    } catch (e) {
-                      console.warn('startSession not available', e);
-                    }
+                    try { startSession(mode as any); } catch (e) {}
                     toast('Game reset!', { icon: '🔄' });
                   }
                 }}
@@ -687,7 +582,7 @@ function GameContent() {
                 whileHover={{ scale: canRedo ? 1.05 : 1 }}
                 whileTap={{ scale: canRedo ? 0.95 : 1 }}
                 onClick={() => {
-                  setAiMoveEnabled(false); // Disable AI auto-move temporarily
+                  setAiMoveEnabled(false);
                   redo();
                 }}
                 disabled={!canRedo}
