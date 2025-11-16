@@ -16,52 +16,6 @@ A complete implementation of the classic strategy board game Nine Men's Morris (
 - [Features in Detail](#-features-in-detail)
 - [Tech Stack](#-tech-stack)
 - [Project Structure](#-project-structure)
-- [Testing](#-testing)
-- [Development Plan](#-development-plan)
-
-## 🎮 Game Features
-
-### Week 1: Core Game ✅
-- **Complete Game Logic**: Full implementation of Nine Men's Morris rules
-- **Three Game Phases**:
-  - **Placing**: Players take turns placing 9 pieces each
-  - **Moving**: Move pieces to adjacent positions
-  - **Flying**: Move to any position when reduced to 3 pieces
-- **Mill Detection**: Automatic detection of three-in-a-row
-- **Piece Removal**: Remove opponent pieces after forming mills
-- **Win Conditions**: Win by reducing opponent to 2 pieces or blocking all moves
-- **Interactive Board**: SVG-based board with 24 positions
-- **Visual Feedback**: Highlights for selected pieces and legal moves
-
-### Week 2: Enhanced Features ✅
-- **Undo/Redo**: Full game history with 50-move limit
-- **Keyboard Shortcuts**: 
-  - `Ctrl+Z` / `Cmd+Z` - Undo
-  - `Ctrl+Y` / `Cmd+Shift+Z` - Redo
-  - `Ctrl+R` / `Cmd+R` - Reset (with confirmation)
-- **Smooth Animations**: Framer Motion for polished UX
-- **Finite State Machine**: Robust phase management
-- **REST API**: Move validation and game state endpoints
-- **Game Controls**: Visual buttons for all actions
-- **History Tracking**: See number of moves made
-
-### Week 3: AI Opponent ✅
-- **Minimax Algorithm**: Intelligent move selection
-- **Alpha-Beta Pruning**: Optimized search performance
-- **Three Difficulty Levels**:
-  - **Easy**: 2-ply search, 30% randomness
-  - **Medium**: 4-ply search, 10% randomness
-  - **Hard**: 6-ply search, no randomness
-- **Comprehensive Evaluation**:
-  - Piece advantage
-  - Mill formations
-  - Potential mills
-  - Piece mobility
-  - Center control
-  - Position blocking
-- **AI Settings Panel**: Toggle AI, choose color, select difficulty
-- **Thinking Indicator**: Visual feedback during AI calculation
-- **Smooth Integration**: AI works with all existing features
 
 ## 📖 How to Play
 
@@ -131,29 +85,6 @@ You win when:
 - Stores up to 50 game states
 - Supports unlimited undo/redo within limit
 - Memory-efficient state storage
-
-### API Endpoints
-
-#### POST /api/move
-Validate and execute moves
-```json
-{
-  "action": "place" | "move" | "remove" | "select",
-  "gameState": { /* current game state */ },
-  "position": 0-23,
-  "from": 0-23  // for move action
-}
-```
-
-#### POST /api/ai-move
-Get AI move recommendation
-```json
-{
-  "gameState": { /* current game state */ },
-  "aiPlayer": "white" | "black",
-  "difficulty": "easy" | "medium" | "hard"
-}
-```
 
 ## 🚀 Getting Started
 
@@ -243,17 +174,6 @@ Nine_Men_Morris/
 └── README.md                     # This file
 ```
 
-## 🧪 Testing
-
-See [TESTING_GUIDE.md](./TESTING_GUIDE.md) for comprehensive test cases covering:
-- Core game functionality (10 tests)
-- Enhanced features (8 tests)
-- AI opponent (11 tests)
-- Integration scenarios (5 tests)
-- Edge cases (6 tests)
-- Performance tests (3 tests)
-- Bug verification (3 tests)
-
 ### Quick Test
 1. Start the dev server
 2. Open http://localhost:3000
@@ -261,42 +181,10 @@ See [TESTING_GUIDE.md](./TESTING_GUIDE.md) for comprehensive test cases covering
 4. Enable AI and play against it
 5. Test undo/redo functionality
 
-## � Known Issues
-
-None currently! If you find any bugs, please report them.
-
-## 📝 Development Plan
-
-This project was built following a structured 30-day plan:
-- **Week 1 (Days 1-7)**: Core game implementation
-- **Week 2 (Days 8-14)**: Enhanced features and API
-- **Week 3 (Days 15-21)**: AI opponent
-- **Week 4 (Days 22-30)**: Polish and optimization (optional)
-
-See [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md) for detailed breakdown.
-
-## 🎓 Learning Resources
-
-### Nine Men's Morris Rules
-- [Wikipedia](https://en.wikipedia.org/wiki/Nine_men%27s_morris)
-- [Game Rules](https://www.mastersofgames.com/rules/morris-rules.htm)
-
-### AI Algorithms
-- [Minimax Algorithm](https://en.wikipedia.org/wiki/Minimax)
-- [Alpha-Beta Pruning](https://en.wikipedia.org/wiki/Alpha%E2%80%93beta_pruning)
-- [Game Tree Search](https://www.chessprogramming.org/Search)
-
-### Technologies Used
-- [Next.js Documentation](https://nextjs.org/docs)
-- [React Documentation](https://react.dev/)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [Tailwind CSS](https://tailwindcss.com/docs)
-- [Framer Motion](https://www.framer.com/motion/)
-
 ## 🤝 Contributing
 
 Contributions are welcome! Areas for improvement:
-- Additional AI algorithms (MCTS, Neural Networks)
+- Additional AI algorithms 
 - Multiplayer support (WebSockets)
 - Persistent game state (localStorage/database)
 - Tournament mode
@@ -315,14 +203,6 @@ This project is open source and available under the MIT License.
 - Implementation inspired by various online versions
 - AI algorithm based on classic game theory
 - Built with modern web technologies
-
-## 📞 Support
-
-If you have questions or need help:
-1. Check the [TESTING_GUIDE.md](./TESTING_GUIDE.md)
-2. Review [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
-3. Read [WEEK3_SUMMARY.md](./WEEK3_SUMMARY.md) for AI details
-4. Open an issue on GitHub
 
 ## 🎉 Enjoy the Game!
 
